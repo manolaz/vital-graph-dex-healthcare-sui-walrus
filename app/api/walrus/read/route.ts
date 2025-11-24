@@ -25,16 +25,15 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    // Get the blob data
-    const blob = await response.blob()
-    const buffer = await blob.arrayBuffer()
-    
-    // Return the blob with appropriate headers
-    return new NextResponse(buffer, {
+    // Stream the response back
+    return new NextResponse(response.body, {
       status: 200,
       headers: {
         "Content-Type": response.headers.get("Content-Type") || "application/octet-stream",
-        "Content-Length": response.headers.get("Content-Length") || String(buffer.byteLength),
+        // Forward Content-Length if available, otherwise let it be chunked
+        ...(response.headers.get("Content-Length") && { 
+          "Content-Length": response.headers.get("Content-Length")! 
+        }),
       },
     })
   } catch (error) {

@@ -7,14 +7,14 @@ export async function PUT(req: NextRequest) {
     const searchParams = req.nextUrl.searchParams
     const epochs = searchParams.get("epochs") || "5"
     
-    // Forward the request body directly to Walrus
-    const body = await req.blob()
-    
+    // Forward the request body directly to Walrus with streaming
     const walrusUrl = `${PUBLISHER_URL}/v1/store?epochs=${epochs}`
-    
+
+    // @ts-ignore - duplex is needed for streaming uploads in node fetch but not in standard RequestInit types yet
     const response = await fetch(walrusUrl, {
       method: "PUT",
-      body: body,
+      body: req.body,
+      duplex: 'half', 
     })
 
     if (!response.ok) {
