@@ -5,7 +5,7 @@ import { DigitalTwinCard } from "@/components/vitalgraph/digital-twin-card";
 import { UploadHealthData } from "@/components/vitalgraph/upload-health-data";
 import { LiquidityPools } from "@/components/vitalgraph/liquidity-pools";
 import { useCurrentAccount } from "@mysten/dapp-kit";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { vitalService, type DigitalTwin } from "@/lib/vital-service";
 import { FileCheck, Activity } from "lucide-react";
 import { motion } from "framer-motion";
@@ -13,14 +13,29 @@ import { motion } from "framer-motion";
 export default function Home() {
   const account = useCurrentAccount();
   const [twin, setTwin] = useState<DigitalTwin | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (account) {
-      vitalService.getDigitalTwin(account.address).then(setTwin).catch(console.error);
-    } else {
+  const loadTwin = useCallback(async () => {
+    if (!account) {
       setTwin(null);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await vitalService.getDigitalTwin(account.address);
+      setTwin(data);
+    } catch (e) {
+      console.error(e);
+      // Optionally handle specific errors or leave twin as null
+    } finally {
+      setLoading(false);
     }
   }, [account]);
+
+  useEffect(() => {
+    loadTwin();
+  }, [loadTwin]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-teal-500/30 overflow-hidden relative">
@@ -34,7 +49,11 @@ export default function Home() {
       <main className="container mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-8 relative z-10 pt-10">
         {/* Left Column: Identity & Upload */}
         <div className="lg:col-span-4 space-y-8">
-          <DigitalTwinCard />
+          <DigitalTwinCard 
+            twin={twin} 
+            loading={loading} 
+            onMintSuccess={loadTwin} 
+          />
           
           <motion.div 
             initial={{ opacity: 0, y: 20 }} 
@@ -42,7 +61,10 @@ export default function Home() {
             transition={{ delay: 0.2 }}
           >
             {twin ? (
-                <UploadHealthData twinId={twin.id} />
+                <UploadHealthData 
+                  twinId={twin.id} 
+                  onUploadSuccess={loadTwin} 
+                />
             ) : (
                 <div className="p-8 border border-dashed border-white/10 rounded-2xl text-center text-white/40 bg-white/[0.02]">
                 <Activity className="h-10 w-10 mx-auto mb-3 opacity-20" />

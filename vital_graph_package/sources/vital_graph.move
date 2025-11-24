@@ -22,6 +22,9 @@ public struct DigitalTwin has key, store {
     id: sui::object::UID,
     reputation_score: u64,
     owner: address,
+    name: String,
+    bio: String,
+    email: String,
 }
 
 /// A Health Record attached as a Dynamic Field to the Digital Twin.
@@ -59,6 +62,12 @@ public struct DataPool has key {
 public struct DigitalTwinMinted has copy, drop {
     id: address,
     owner: address,
+}
+
+public struct ProfileUpdated has copy, drop {
+    id: address,
+    owner: address,
+    name: String,
 }
 
 public struct HealthRecordAdded has copy, drop {
@@ -120,18 +129,47 @@ public struct DataAccessRequested has copy, drop {
 // --- Functions ---
 
 /// Mint a new Digital Twin for the user.
-public fun mint_digital_twin(ctx: &mut sui::tx_context::TxContext) {
+public fun mint_digital_twin(
+    name: vector<u8>,
+    bio: vector<u8>,
+    email: vector<u8>,
+    ctx: &mut sui::tx_context::TxContext,
+) {
     let sender = sui::tx_context::sender(ctx);
     let twin = DigitalTwin {
         id: sui::object::new(ctx),
         reputation_score: 0,
         owner: sender,
+        name: string::utf8(name),
+        bio: string::utf8(bio),
+        email: string::utf8(email),
     };
     event::emit(DigitalTwinMinted {
         id: sui::object::uid_to_address(&twin.id),
         owner: sender,
     });
     sui::transfer::public_transfer(twin, sender);
+}
+
+/// Update Digital Twin profile information
+public fun update_profile(
+    twin: &mut DigitalTwin,
+    name: vector<u8>,
+    bio: vector<u8>,
+    email: vector<u8>,
+    ctx: &mut sui::tx_context::TxContext,
+) {
+    assert!(twin.owner == sui::tx_context::sender(ctx), ENotOwner);
+
+    twin.name = string::utf8(name);
+    twin.bio = string::utf8(bio);
+    twin.email = string::utf8(email);
+
+    event::emit(ProfileUpdated {
+        id: sui::object::uid_to_address(&twin.id),
+        owner: sui::tx_context::sender(ctx),
+        name: twin.name,
+    });
 }
 
 /// Add a health record as a dynamic field to the Digital Twin.

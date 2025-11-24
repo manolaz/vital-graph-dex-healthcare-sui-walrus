@@ -2,7 +2,7 @@ import { getFullnodeUrl, SuiClient } from "@mysten/sui/client";
 import { Transaction } from "@mysten/sui/transactions";
 
 // Constants
-const PACKAGE_ID = "0xe2427ae7b5f32ec46fe52e29f19b033585d5b879fa87f80cc39d717f034f0cd6"; // Replace with deployed package ID
+const PACKAGE_ID = "0xb9e8d094ceb11f8c1f21f0a778a54d7ae2384b0ae2d963807cb6c46bb649f761"; // Replace with deployed package ID
 const MODULE_NAME = "vital_graph";
 
 export interface HealthRecord {
@@ -16,6 +16,10 @@ export interface HealthRecord {
 export interface DigitalTwin {
   id: string;
   reputation: number;
+  owner: string;
+  name: string;
+  bio: string;
+  email: string;
   records: HealthRecord[];
 }
 
@@ -72,6 +76,10 @@ export const vitalService = {
     return {
       id: id!,
       reputation: parseInt(obj.fields.reputation_score),
+      owner: obj.fields.owner,
+      name: obj.fields.name,
+      bio: obj.fields.bio,
+      email: obj.fields.email,
       records
     };
   },
@@ -144,11 +152,29 @@ export const vitalService = {
     }
   },
 
-  mintDigitalTwin() {
+  mintDigitalTwin(name: string, bio: string, email: string) {
     const tx = new Transaction();
     tx.moveCall({
       target: `${PACKAGE_ID}::${MODULE_NAME}::mint_digital_twin`,
-      arguments: []
+      arguments: [
+        tx.pure.string(name),
+        tx.pure.string(bio),
+        tx.pure.string(email)
+      ]
+    });
+    return tx;
+  },
+
+  updateProfile(twinId: string, name: string, bio: string, email: string) {
+    const tx = new Transaction();
+    tx.moveCall({
+      target: `${PACKAGE_ID}::${MODULE_NAME}::update_profile`,
+      arguments: [
+        tx.object(twinId),
+        tx.pure.string(name),
+        tx.pure.string(bio),
+        tx.pure.string(email)
+      ]
     });
     return tx;
   },
