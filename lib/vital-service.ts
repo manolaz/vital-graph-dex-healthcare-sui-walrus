@@ -19,6 +19,17 @@ export interface DigitalTwin {
   records: HealthRecord[];
 }
 
+export interface DataPool {
+    id: string;
+    name: string;
+    description: string;
+    criteria: string;
+    balance: number;
+    dataCount: number;
+    subscriptionPrice: number;
+    owner: string;
+}
+
 export const vitalService = {
   getClient() {
     return new SuiClient({ url: getFullnodeUrl("testnet") });
@@ -65,7 +76,7 @@ export const vitalService = {
     };
   },
 
-  async getPool(id: string) {
+  async getPool(id: string): Promise<DataPool | null> {
     const client = this.getClient();
     const obj = await client.getObject({
         id,
@@ -80,18 +91,18 @@ export const vitalService = {
     return {
         id: obj.data.objectId,
         name: fields.name,
+        description: fields.description,
         criteria: fields.criteria,
         balance: parseInt(fields.balance),
         dataCount: parseInt(fields.data_count),
-        stakers: fields.stakers
+        subscriptionPrice: parseInt(fields.subscription_price),
+        owner: fields.owner
     };
   },
 
   async getPoolEvents(poolId: string) {
     const client = this.getClient();
     // Query for DataStaked events related to this pool
-    // Note: In a real indexer, we would filter by pool_id in the event
-    // Here we fetch recent events and filter client-side for simplicity in this demo
     const events = await client.queryEvents({
         query: { MoveModule: { package: PACKAGE_ID, module: MODULE_NAME } }
     });
@@ -103,6 +114,34 @@ export const vitalService = {
             recordName: e.parsedJson.record_name,
             timestamp: e.timestampMs
         }));
+  },
+
+  async checkSubscription(poolId: string, userAddress: string): Promise<boolean> {
+    // This is tricky without a view function or reading the Table directly via RPC
+    // For now, we might assume we can read the table field if we know the Table ID from getPool
+    // But checking a key in a Table via RPC requires `getDynamicFieldObject` on the table ID.
+    // Let's implement that properly.
+    
+    const client = this.getClient();
+    const poolObj = await client.getObject({ id: poolId, options: { showContent: true } });
+    if (!poolObj.data) return false;
+    const content = poolObj.data.content as any;
+    const subscribersTableId = content.fields.subscribers.fields.id.id;
+
+    try {
+        const field = await client.getDynamicFieldObject({
+            parentId: subscribersTableId,
+            name: { type: "address", value: userAddress }
+        });
+        
+        if (!field.data) return false;
+        
+        // Check expiration
+        const expiration = parseInt((field.data.content as any).fields.value);
+        return expiration > Date.now();
+    } catch (e) {
+        return false; // Field doesn't exist or error
+    }
   },
 
   mintDigitalTwin() {
@@ -130,13 +169,15 @@ export const vitalService = {
     return tx;
   },
 
-  createPool(name: string, criteria: string) {
+  createPool(name: string, description: string, criteria: string, subscriptionPrice: number) {
     const tx = new Transaction();
     tx.moveCall({
       target: `${PACKAGE_ID}::${MODULE_NAME}::create_pool`,
       arguments: [
         tx.pure.string(name),
-        tx.pure.string(criteria)
+        tx.pure.string(description),
+        tx.pure.string(criteria),
+        tx.pure.u64(subscriptionPrice)
       ]
     });
     return tx;
@@ -154,6 +195,19 @@ export const vitalService = {
       return tx;
   },
 
+  subscribe(poolId: string, coinId: string) { // coinId or split coin object
+      const tx = new Transaction();
+      tx.moveCall({
+          target: `${PACKAGE_ID}::${MODULE_NAME}::subscribe`,
+          arguments: [
+              tx.object(poolId),
+              tx.object(coinId), // User must provide a coin with >= subscriptionPrice
+              tx.object("0x6")
+          ]
+      });
+      return tx;
+  },
+
   stakeRecord(poolId: string, twinId: string, recordName: string) {
       const tx = new Transaction();
       tx.moveCall({
@@ -165,6 +219,20 @@ export const vitalService = {
           ]
       });
       return tx;
+  },
+
+  requestAccess(poolId: string, twinId: string, recordName: string, publicKey: string) {
+      const tx = new Transaction();
+      tx.moveCall({
+          target: `${PACKAGE_ID}::${MODULE_NAME}::request_access`,
+          arguments: [
+              tx.object(poolId),
+              tx.object(twinId), // Note: In real app, this might need the owner's signature or be accessible via SharedObject/Listing
+              tx.pure.string(recordName),
+              tx.pure.string(publicKey),
+              tx.object("0x6")
+          ]
+      });
+      return tx;
   }
 };
-
