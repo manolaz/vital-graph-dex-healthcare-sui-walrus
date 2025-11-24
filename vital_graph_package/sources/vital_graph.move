@@ -17,6 +17,8 @@ const ERecordNotFound: u64 = 2;
 const ENotSubscribed: u64 = 3;
 const EInsufficientPayment: u64 = 4;
 const ENotStaked: u64 = 5;
+const ENoAccess: u64 = 6;
+const ERecordAlreadyPurchased: u64 = 7;
 
 /// The Digital Twin representing a user's health identity.
 public struct DigitalTwin has key, store {
@@ -52,14 +54,23 @@ public struct DataPool has key {
     criteria: String, // e.g., "Diabetes Type 2"
     balance: Balance<SUI>,
     subscription_price: u64, // Monthly price in SUI
+    record_price: u64, // One-time purchase price per record in SUI
     reward_rate: u64, // SUI per ms per record
     subscribers: Table<address, u64>, // Address -> Expiration Timestamp
+    purchases: Table<address, VecSet<String>>, // Address -> Set of Purchased Record Names
     stakers: Table<address, StakerInfo>, // Address -> StakerInfo
     data_count: u64,
     owner: address,
 }
 
 /// Events
+public struct PoolCreated has copy, drop {
+    pool_id: address,
+    name: String,
+    description: String,
+    owner: address,
+}
+
 public struct DigitalTwinMinted has copy, drop {
     id: address,
     owner: address,
@@ -117,6 +128,13 @@ public struct SubscriptionPurchased has copy, drop {
     pool_id: address,
     subscriber: address,
     expiration: u64,
+}
+
+public struct RecordPurchased has copy, drop {
+    pool_id: address,
+    buyer: address,
+    record_name: String,
+    price: u64,
 }
 
 public struct DataAccessRequested has copy, drop {
@@ -212,23 +230,37 @@ public fun create_pool(
     description: vector<u8>,
     criteria: vector<u8>,
     subscription_price: u64,
+    record_price: u64,
     reward_rate: u64,
     ctx: &mut sui::tx_context::TxContext,
 ) {
     let sender = sui::tx_context::sender(ctx);
+    let pool_uid = sui::object::new(ctx);
+    let pool_id_addr = sui::object::uid_to_address(&pool_uid);
+
     let pool = DataPool {
-        id: sui::object::new(ctx),
+        id: pool_uid,
         name: string::utf8(name),
         description: string::utf8(description),
         criteria: string::utf8(criteria),
         balance: balance::zero(),
         subscription_price,
+        record_price,
         reward_rate,
         subscribers: table::new(ctx),
+        purchases: table::new(ctx),
         stakers: table::new(ctx),
         data_count: 0,
         owner: sender,
     };
+
+    event::emit(PoolCreated {
+        pool_id: pool_id_addr,
+        name: pool.name,
+        description: pool.description,
+        owner: sender,
+    });
+
     sui::transfer::share_object(pool);
 }
 
@@ -288,6 +320,38 @@ public fun subscribe(
     });
 }
 
+/// Purchase a single record permanently.
+public fun purchase_record(
+    pool: &mut DataPool,
+    record_name: vector<u8>,
+    payment: Coin<SUI>,
+    ctx: &mut sui::tx_context::TxContext,
+) {
+    let sender = sui::tx_context::sender(ctx);
+    let amount = coin::value(&payment);
+    let name_str = string::utf8(record_name);
+
+    assert!(amount >= pool.record_price, EInsufficientPayment);
+
+    // Initialize purchases entry if not exists
+    if (!table::contains(&pool.purchases, sender)) {
+        table::add(&mut pool.purchases, sender, vec_set::empty());
+    };
+
+    let purchased_records = table::borrow_mut(&mut pool.purchases, sender);
+    assert!(!vec_set::contains(purchased_records, &name_str), ERecordAlreadyPurchased);
+
+    vec_set::insert(purchased_records, name_str);
+    balance::join(&mut pool.balance, coin::into_balance(payment));
+
+    event::emit(RecordPurchased {
+        pool_id: sui::object::uid_to_address(&pool.id),
+        buyer: sender,
+        record_name: string::utf8(record_name),
+        price: pool.record_price,
+    });
+}
+
 /// Check if a user has an active subscription.
 public fun check_subscription(pool: &DataPool, user: address, clock: &Clock): bool {
     if (!table::contains(&pool.subscribers, user)) {
@@ -295,6 +359,15 @@ public fun check_subscription(pool: &DataPool, user: address, clock: &Clock): bo
     };
     let expiration = *table::borrow(&pool.subscribers, user);
     expiration > clock::timestamp_ms(clock)
+}
+
+/// Check if a user has purchased a specific record.
+public fun check_purchase(pool: &DataPool, user: address, record_name: String): bool {
+    if (!table::contains(&pool.purchases, user)) {
+        return false
+    };
+    let purchased_records = table::borrow(&pool.purchases, user);
+    vec_set::contains(purchased_records, &record_name)
 }
 
 /// Request access to a specific record (Seal integration pattern).
@@ -307,12 +380,15 @@ public fun request_access(
     ctx: &mut sui::tx_context::TxContext,
 ) {
     let sender = sui::tx_context::sender(ctx);
+    let name_str = string::utf8(record_name);
 
-    // 1. Verify Subscription
-    assert!(check_subscription(pool, sender, clock), ENotSubscribed);
+    // 1. Verify Subscription OR Purchase
+    let is_subscribed = check_subscription(pool, sender, clock);
+    let is_purchased = check_purchase(pool, sender, name_str);
+
+    assert!(is_subscribed || is_purchased, ENoAccess);
 
     // 2. Verify Record Existence
-    let name_str = string::utf8(record_name);
     assert!(dynamic_field::exists_(&twin.id, name_str), ERecordNotFound);
 
     let record: &HealthRecord = dynamic_field::borrow(&twin.id, name_str);
@@ -360,7 +436,10 @@ entry fun seal_approve_subscriber(
     let record_name = string::utf8(record_name_vec);
 
     let sender = sui::tx_context::sender(ctx);
-    assert!(check_subscription(pool, sender, clock), ENotSubscribed);
+    let is_subscribed = check_subscription(pool, sender, clock);
+    let is_purchased = check_purchase(pool, sender, record_name);
+
+    assert!(is_subscribed || is_purchased, ENoAccess);
 
     assert!(table::contains(&pool.stakers, provider), ENotStaked);
     let info = table::borrow(&pool.stakers, provider);

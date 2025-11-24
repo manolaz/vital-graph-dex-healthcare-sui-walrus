@@ -2,7 +2,7 @@ import { getFullnodeUrl, SuiClient } from "@mysten/sui/client";
 import { Transaction } from "@mysten/sui/transactions";
 
 // Constants
-const PACKAGE_ID = "0xc5f4414868931978b9b88876488d7672a9af9084e16ef07cc6d823f930e46fc6"; // Replace with deployed package ID
+const PACKAGE_ID = "0xb07d03d94517ba5bf899199bb01236b6eabacd5d99c9f9178b58003e889b1af1"; // Replace with deployed package ID
 const MODULE_NAME = "vital_graph";
 
 export interface HealthRecord {
@@ -32,6 +32,14 @@ export interface DataPool {
     balance: number;
     dataCount: number;
     subscriptionPrice: number;
+    recordPrice: number;
+    owner: string;
+}
+
+export interface PoolEvent {
+    poolId: string;
+    name: string;
+    description: string;
     owner: string;
 }
 
@@ -106,8 +114,41 @@ export const vitalService = {
         balance: parseInt(fields.balance),
         dataCount: parseInt(fields.data_count),
         subscriptionPrice: parseInt(fields.subscription_price),
+        recordPrice: parseInt(fields.record_price),
         owner: fields.owner
     };
+  },
+
+  async getPools(): Promise<PoolEvent[]> {
+    const client = this.getClient();
+    const events = await client.queryEvents({
+        query: { MoveModule: { package: PACKAGE_ID, module: MODULE_NAME } }
+    });
+
+    return events.data
+        .filter((e: any) => e.type.includes("PoolCreated"))
+        .map((e: any) => ({
+            poolId: e.parsedJson.pool_id,
+            name: e.parsedJson.name,
+            description: e.parsedJson.description,
+            owner: e.parsedJson.owner
+        }));
+  },
+
+  async getPurchasedRecords(userAddress: string) {
+      const client = this.getClient();
+      const events = await client.queryEvents({
+          query: { MoveModule: { package: PACKAGE_ID, module: MODULE_NAME } }
+      });
+
+      return events.data
+          .filter((e: any) => e.type.includes("RecordPurchased") && e.parsedJson.buyer === userAddress)
+          .map((e: any) => ({
+              poolId: e.parsedJson.pool_id,
+              recordName: e.parsedJson.record_name,
+              price: e.parsedJson.price,
+              timestamp: e.timestampMs
+          }));
   },
 
   async getPoolEvents(poolId: string) {
@@ -197,7 +238,7 @@ export const vitalService = {
     return tx;
   },
 
-  createPool(name: string, description: string, criteria: string, subscriptionPrice: number, rewardRate: number = 0) {
+  createPool(name: string, description: string, criteria: string, subscriptionPrice: number, recordPrice: number, rewardRate: number = 0) {
     const tx = new Transaction();
     tx.moveCall({
       target: `${PACKAGE_ID}::${MODULE_NAME}::create_pool`,
@@ -206,10 +247,24 @@ export const vitalService = {
         tx.pure.string(description),
         tx.pure.string(criteria),
         tx.pure.u64(subscriptionPrice),
+        tx.pure.u64(recordPrice),
         tx.pure.u64(rewardRate)
       ]
     });
     return tx;
+  },
+
+  purchaseRecord(poolId: string, recordName: string, coinId: string) {
+      const tx = new Transaction();
+      tx.moveCall({
+          target: `${PACKAGE_ID}::${MODULE_NAME}::purchase_record`,
+          arguments: [
+              tx.object(poolId),
+              tx.pure.string(recordName),
+              tx.object(coinId) // User must provide a coin with >= recordPrice
+          ]
+      });
+      return tx;
   },
 
   fundPool(poolId: string, coinId: string) {

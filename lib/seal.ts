@@ -6,7 +6,7 @@ import { fromBase64, fromHex, toHex } from "@mysten/sui/utils";
 
 // Use the same package ID as vital-service or import it
 // For now, duplicating or we can move constants to a shared file
-const PACKAGE_ID = "0xc5f4414868931978b9b88876488d7672a9af9084e16ef07cc6d823f930e46fc6";
+const PACKAGE_ID = "0xb07d03d94517ba5bf899199bb01236b6eabacd5d99c9f9178b58003e889b1af1";
 const MODULE_NAME = "vital_graph";
 
 // Testnet Seal Key Servers (from Seal docs/examples)

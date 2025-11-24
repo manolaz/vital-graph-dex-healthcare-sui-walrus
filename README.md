@@ -37,11 +37,11 @@ VitalGraph is a decentralized application (dApp) built on **Sui blockchain** and
 
 **Package ID (Sui Testnet):**
 ```
-0xc5f4414868931978b9b88876488d7672a9af9084e16ef07cc6d823f930e46fc6
+0xb07d03d94517ba5bf899199bb01236b6eabacd5d99c9f9178b58003e889b1af1
 ```
 
 **Explorer Links:**
-- [Sui Explorer](https://suiexplorer.com/object/0xc5f4414868931978b9b88876488d7672a9af9084e16ef07cc6d823f930e46fc6?network=testnet)
+- [Sui Explorer](https://suiexplorer.com/object/0xb07d03d94517ba5bf899199bb01236b6eabacd5d99c9f9178b58003e889b1af1?network=testnet)
 - [Walrus Explorer (Testnet)](https://walrus.space/)
 
 ## 🏗️ Architecture
@@ -140,7 +140,7 @@ pnpm build
 Ensure your `.env.local` or configuration constants match the deployed package:
 
 ```typescript
-export const PACKAGE_ID = "0xc5f4414868931978b9b88876488d7672a9af9084e16ef07cc6d823f930e46fc6"
+export const PACKAGE_ID = "0xb07d03d94517ba5bf899199bb01236b6eabacd5d99c9f9178b58003e889b1af1"
 ```
 
 ## 📖 User Journey
