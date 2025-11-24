@@ -12,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Upload, Lock, FileText, Loader2, Shield, FileUp } from "lucide-react";
-import { storeEncryptedBlob, generateKey, exportKey } from "@/lib/walrus";
+import { storePreEncryptedBlob } from "@/lib/walrus";
+import { sealService } from "@/lib/seal";
 import { vitalService } from "@/lib/vital-service";
 import {
   useCurrentAccount,
@@ -20,6 +21,7 @@ import {
 } from "@mysten/dapp-kit";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+import { toHex } from "@mysten/sui/utils"; // Helper for backup key display if needed
 
 interface UploadHealthDataProps {
   twinId: string;
@@ -41,26 +43,34 @@ export function UploadHealthData({
 
     setLoading(true);
     try {
-      // 1. Generate Key
-      const key = await generateKey();
-      const exportedKey = await exportKey(key);
+      const recordName = description || file.name;
 
-      // 2. Encrypt & Store to Walrus
-      toast.info("Encrypting and Uploading to Walrus...");
-      const result = await storeEncryptedBlob(file, key);
+      // 1. Encrypt with Seal (Identity: [ProviderAddress][RecordName])
+      toast.info("Encrypting with Seal...");
+      const fileBytes = new Uint8Array(await file.arrayBuffer());
+      const { encryptedBytes, backupKey } = await sealService.encryptHealthRecord(
+        fileBytes,
+        account.address,
+        recordName
+      );
+
+      // 2. Upload to Walrus
+      toast.info("Uploading to Walrus...");
+      const result = await storePreEncryptedBlob(encryptedBytes);
 
       // 3. Mint to Sui
       toast.info("Minting Record to Sui...");
       const tx = vitalService.addHealthRecord(
         twinId,
-        description || file.name,
+        recordName,
         result.blobId,
         JSON.stringify({
           type: file.type,
           size: file.size,
           walrus_obj: result.suiBlobObjectId,
+          encryption: "SEAL-IBE"
         }),
-        result.iv
+        "SEAL" // IV not used for Seal (embedded), using as marker
       );
 
       signAndExecute(
@@ -70,8 +80,11 @@ export function UploadHealthData({
             toast.success("Health Record Added Securely!");
             setFile(null);
             setDescription("");
-            // In a real app, we'd save the exportedKey somewhere safe or show it to the user
-            alert(`SAVE THIS KEY TO DECRYPT YOUR DATA:\n${exportedKey}`);
+            
+            // Optional: Show backup key
+            // const backupKeyHex = toHex(backupKey);
+            // alert(`Backup Key (for recovery): ${backupKeyHex}`);
+            
             onUploadSuccess();
           },
           onError: (err) => {

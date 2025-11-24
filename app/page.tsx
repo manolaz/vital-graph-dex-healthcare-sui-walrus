@@ -4,6 +4,7 @@ import { DashboardHeader } from "@/components/vitalgraph/dashboard-header";
 import { DigitalTwinCard } from "@/components/vitalgraph/digital-twin-card";
 import { UploadHealthData } from "@/components/vitalgraph/upload-health-data";
 import { LiquidityPools } from "@/components/vitalgraph/liquidity-pools";
+import { HealthRecordsList } from "@/components/vitalgraph/health-records-list";
 import { useCurrentAccount } from "@mysten/dapp-kit";
 import { useEffect, useState, useCallback } from "react";
 import { vitalService, type DigitalTwin } from "@/lib/vital-service";
@@ -75,24 +76,7 @@ export default function Home() {
           
           {/* My Records List (Polished) */}
           {twin && twin.records.length > 0 && (
-            <motion.div 
-                initial={{ opacity: 0, y: 20 }} 
-                animate={{ opacity: 1, y: 0 }} 
-                transition={{ delay: 0.3 }}
-                className="p-5 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-md"
-            >
-              <h3 className="text-sm font-medium text-white/60 mb-4 flex items-center gap-2">
-                <FileCheck className="h-4 w-4" /> My Verified Records
-              </h3>
-              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                {twin.records.map((r, i) => (
-                  <div key={i} className="group text-sm p-3 bg-black/20 hover:bg-white/5 border border-transparent hover:border-white/10 rounded-lg flex justify-between items-center transition-all">
-                    <span className="truncate max-w-[180px] text-white/80">{r.name}</span>
-                    <span className="text-[10px] uppercase font-bold text-teal-400 bg-teal-500/10 px-2 py-1 rounded border border-teal-500/20">Verified</span>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
+            <HealthRecordsList records={twin.records} ownerAddress={twin.owner} />
           )}
         </div>
 

@@ -2,7 +2,7 @@ import { getFullnodeUrl, SuiClient } from "@mysten/sui/client";
 import { Transaction } from "@mysten/sui/transactions";
 
 // Constants
-const PACKAGE_ID = "0xb9e8d094ceb11f8c1f21f0a778a54d7ae2384b0ae2d963807cb6c46bb649f761"; // Replace with deployed package ID
+const PACKAGE_ID = "0xc5f4414868931978b9b88876488d7672a9af9084e16ef07cc6d823f930e46fc6"; // Replace with deployed package ID
 const MODULE_NAME = "vital_graph";
 
 export interface HealthRecord {
@@ -11,6 +11,7 @@ export interface HealthRecord {
   metadata: string;
   timestamp: number;
   verified: boolean;
+  encryptionIv: string;
 }
 
 export interface DigitalTwin {
@@ -65,11 +66,12 @@ export const vitalService = {
         });
         const record = (fieldObj.data?.content as any).fields.value.fields;
         records.push({
-            name: field.name.value,
-            blobId: record.blob_id,
-            metadata: record.metadata,
+            name: field.name.value as string,
+            blobId: record.blob_id as string,
+            metadata: record.metadata as string,
             timestamp: parseInt(record.timestamp),
-            verified: record.verified
+            verified: record.verified,
+            encryptionIv: record.encryption_iv as string
         });
     }
 

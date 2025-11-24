@@ -54,7 +54,8 @@ export async function storeBlob(data: string | File | Blob, epochs = 5): Promise
  * @param blobId - The ID of the blob to read
  */
 export async function readBlob(blobId: string): Promise<Blob> {
-  const url = `${AGGREGATOR_URL}/v1/blobs/${blobId}`
+  // Use internal API proxy to avoid CORS
+  const url = `/api/walrus/read?blobId=${blobId}`
 
   const response = await fetch(url)
 
@@ -65,8 +66,18 @@ export async function readBlob(blobId: string): Promise<Blob> {
   return await response.blob()
 }
 
-// --- Encryption Utilities ---
 
+/**
+ * Stores pre-encrypted data to Walrus (e.g. Seal encrypted)
+ */
+export async function storePreEncryptedBlob(encryptedData: Blob | Uint8Array, epochs = 5): Promise<BlobMetadata> {
+  const blob = encryptedData instanceof Blob ? encryptedData : new Blob([encryptedData]);
+  return await storeBlob(blob, epochs);
+}
+
+// --- Encryption Utilities (DEPRECATED: Use Seal Service instead) ---
+
+/** @deprecated Use Seal Service */
 export async function generateKey(): Promise<CryptoKey> {
   return await window.crypto.subtle.generateKey(
     { name: "AES-GCM", length: 256 },
@@ -122,7 +133,7 @@ export async function encryptData(data: string | File, key: CryptoKey): Promise<
   };
 }
 
-export async function decryptData(encryptedBlob: Blob, key: CryptoKey, iv: Uint8Array): Promise<string> {
+export async function decryptData(encryptedBlob: Blob, key: CryptoKey, iv: Uint8Array): Promise<ArrayBuffer> {
   const encryptedBuffer = await encryptedBlob.arrayBuffer();
   
   const decryptedBuffer = await window.crypto.subtle.decrypt(
@@ -131,7 +142,7 @@ export async function decryptData(encryptedBlob: Blob, key: CryptoKey, iv: Uint8
     encryptedBuffer
   );
 
-  return new TextDecoder().decode(decryptedBuffer);
+  return decryptedBuffer;
 }
 
 export async function storeEncryptedBlob(data: string | File, key: CryptoKey, epochs = 5): Promise<BlobMetadata & { iv: string }> {
