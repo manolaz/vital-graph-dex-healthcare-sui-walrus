@@ -2,6 +2,7 @@ module vital_graph::vital_graph;
 
 use std::string::{Self, String};
 use sui::balance::{Self, Balance};
+use sui::bcs;
 use sui::clock::{Self, Clock};
 use sui::coin::{Self, Coin};
 use sui::dynamic_field;
@@ -344,6 +345,44 @@ public fun grant_access(
         record_name: string::utf8(record_name),
         encrypted_key: string::utf8(encrypted_key),
     });
+}
+
+/// Seal Access Policy: Approve access if sender is a subscriber
+entry fun seal_approve_subscriber(
+    id: vector<u8>,
+    pool: &DataPool,
+    clock: &Clock,
+    ctx: &mut sui::tx_context::TxContext,
+) {
+    let mut bcs = bcs::new(id);
+    let provider = bcs::peel_address(&mut bcs);
+    let record_name_vec = bcs::peel_vec_u8(&mut bcs);
+    let record_name = string::utf8(record_name_vec);
+
+    let sender = sui::tx_context::sender(ctx);
+    assert!(check_subscription(pool, sender, clock), ENotSubscribed);
+
+    assert!(table::contains(&pool.stakers, provider), ENotStaked);
+    let info = table::borrow(&pool.stakers, provider);
+    assert!(vec_set::contains(&info.staked_records, &record_name), ERecordNotFound);
+}
+
+/// Seal Access Policy: Approve access if sender is the owner
+entry fun seal_approve_owner(
+    id: vector<u8>,
+    twin: &DigitalTwin,
+    ctx: &mut sui::tx_context::TxContext,
+) {
+    let mut bcs = bcs::new(id);
+    let provider = bcs::peel_address(&mut bcs);
+    let record_name_vec = bcs::peel_vec_u8(&mut bcs);
+    let record_name = string::utf8(record_name_vec);
+
+    let sender = sui::tx_context::sender(ctx);
+    assert!(twin.owner == sender, ENotOwner);
+    assert!(provider == twin.owner, ENotOwner);
+
+    assert!(dynamic_field::exists_(&twin.id, record_name), ERecordNotFound);
 }
 
 /// Internal helper to calculate pending rewards
