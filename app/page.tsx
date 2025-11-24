@@ -9,11 +9,13 @@ import { useEffect, useState, useCallback } from "react";
 import { vitalService, type DigitalTwin } from "@/lib/vital-service";
 import { Activity } from "lucide-react";
 import { motion } from "framer-motion";
+import { useRole } from "@/components/role-context";
 
 export default function Home() {
   const account = useCurrentAccount();
   const [twin, setTwin] = useState<DigitalTwin | null>(null);
   const [loading, setLoading] = useState(false);
+  const { isPatient } = useRole();
 
   const loadTwin = useCallback(async () => {
     if (!account) {
@@ -47,35 +49,37 @@ export default function Home() {
       <DashboardHeader />
 
       <main className="container mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-8 relative z-10 pt-10">
-        {/* Left Column: Identity & Upload */}
-        <div className="lg:col-span-4 space-y-8">
-          <DigitalTwinCard
-            twin={twin}
-            loading={loading}
-            onMintSuccess={loadTwin}
-          />
+        {/* Left Column: Identity & Upload - Only visible for Patients */}
+        {isPatient && (
+          <div className="lg:col-span-4 space-y-8">
+            <DigitalTwinCard
+              twin={twin}
+              loading={loading}
+              onMintSuccess={loadTwin}
+            />
 
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-          >
-            {twin ? (
-              <UploadHealthData twinId={twin.id} onUploadSuccess={loadTwin} />
-            ) : (
-              <div className="p-8 border border-dashed border-white/10 rounded-2xl text-center text-white/40 bg-white/[0.02]">
-                <Activity className="h-10 w-10 mx-auto mb-3 opacity-20" />
-                <p className="text-sm">
-                  Mint your Digital Twin identity to unlock secure health data
-                  storage.
-                </p>
-              </div>
-            )}
-          </motion.div>
-        </div>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+            >
+              {twin ? (
+                <UploadHealthData twinId={twin.id} onUploadSuccess={loadTwin} />
+              ) : (
+                <div className="p-8 border border-dashed border-white/10 rounded-2xl text-center text-white/40 bg-white/[0.02]">
+                  <Activity className="h-10 w-10 mx-auto mb-3 opacity-20" />
+                  <p className="text-sm">
+                    Mint your Digital Twin identity to unlock secure health data
+                    storage.
+                  </p>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
 
-        {/* Right Column: Data Catalogue */}
-        <div className="lg:col-span-8 h-full">
+        {/* Right Column: Data Catalogue - Full width for Researcher, partial for Patient */}
+        <div className={`${isPatient ? "lg:col-span-8" : "lg:col-span-12"} h-full`}>
           <DataCatalogue twin={twin} onUpdate={loadTwin} />
         </div>
       </main>

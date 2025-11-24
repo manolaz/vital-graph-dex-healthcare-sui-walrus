@@ -42,6 +42,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { motion, AnimatePresence } from "framer-motion";
+import { useRole } from "@/components/role-context";
 
 interface Pool {
   id: string;
@@ -101,7 +102,7 @@ export function LiquidityPools({ twin }: { twin: DigitalTwin | null }) {
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
   const [selectedPool, setSelectedPool] = useState<Pool | null>(null);
   const [pools, setPools] = useState<Pool[]>(MOCK_POOLS);
-  const [isResearcher, setIsResearcher] = useState(false);
+  const { isResearcher } = useRole();
 
   // Pool Details & Data Explorer
   const [explorerOpen, setExplorerOpen] = useState(false);
@@ -308,28 +309,7 @@ export function LiquidityPools({ twin }: { twin: DigitalTwin | null }) {
             </CardDescription>
           </div>
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10 backdrop-blur-md">
-              <button
-                onClick={() => setIsResearcher(false)}
-                className={`text-sm font-medium px-4 py-2 rounded-lg transition-all duration-300 ${
-                  !isResearcher
-                    ? "bg-teal-500/20 text-teal-300 shadow-[0_0_15px_rgba(45,212,191,0.3)] border border-teal-500/30"
-                    : "text-white/40 hover:text-white hover:bg-white/5"
-                }`}
-              >
-                Patient
-              </button>
-              <button
-                onClick={() => setIsResearcher(true)}
-                className={`text-sm font-medium px-4 py-2 rounded-lg transition-all duration-300 ${
-                  isResearcher
-                    ? "bg-blue-500/20 text-blue-300 shadow-[0_0_15px_rgba(59,130,246,0.3)] border border-blue-500/30"
-                    : "text-white/40 hover:text-white hover:bg-white/5"
-                }`}
-              >
-                Researcher
-              </button>
-            </div>
+            {/* Role Switcher removed from here, moved to DashboardHeader */}
 
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
               <DialogTrigger asChild>
