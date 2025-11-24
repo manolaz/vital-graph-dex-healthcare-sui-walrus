@@ -8,12 +8,14 @@ use sui::dynamic_field;
 use sui::event;
 use sui::sui::SUI;
 use sui::table::{Self, Table};
+use sui::vec_set::{Self, VecSet};
 
 // Errors
 const ENotOwner: u64 = 1;
 const ERecordNotFound: u64 = 2;
 const ENotSubscribed: u64 = 3;
 const EInsufficientPayment: u64 = 4;
+const ENotStaked: u64 = 5;
 
 /// The Digital Twin representing a user's health identity.
 public struct DigitalTwin has key, store {
@@ -31,6 +33,13 @@ public struct HealthRecord has copy, drop, store {
     timestamp: u64,
 }
 
+/// Information about a staker in a pool.
+public struct StakerInfo has store {
+    staked_records: VecSet<String>,
+    last_claim_timestamp: u64,
+    unclaimed_rewards: u64,
+}
+
 /// A Liquidity Pool for specific data types.
 public struct DataPool has key {
     id: sui::object::UID,
@@ -39,8 +48,9 @@ public struct DataPool has key {
     criteria: String, // e.g., "Diabetes Type 2"
     balance: Balance<SUI>,
     subscription_price: u64, // Monthly price in SUI
+    reward_rate: u64, // SUI per ms per record
     subscribers: Table<address, u64>, // Address -> Expiration Timestamp
-    stakers: Table<address, u64>, // Address -> Staked Amount (mock score)
+    stakers: Table<address, StakerInfo>, // Address -> StakerInfo
     data_count: u64,
     owner: address,
 }
@@ -66,6 +76,31 @@ public struct DataStaked has copy, drop {
     pool_id: address,
     provider: address,
     record_name: String,
+}
+
+public struct RecordUnstaked has copy, drop {
+    pool_id: address,
+    provider: address,
+    record_name: String,
+}
+
+public struct RewardsClaimed has copy, drop {
+    pool_id: address,
+    provider: address,
+    amount: u64,
+}
+
+public struct RecordVerified has copy, drop {
+    twin_id: address,
+    record_name: String,
+    verifier: address,
+}
+
+public struct AccessGranted has copy, drop {
+    pool_id: address,
+    requestor: address,
+    record_name: String,
+    encrypted_key: String,
 }
 
 public struct SubscriptionPurchased has copy, drop {
@@ -138,6 +173,7 @@ public fun create_pool(
     description: vector<u8>,
     criteria: vector<u8>,
     subscription_price: u64,
+    reward_rate: u64,
     ctx: &mut sui::tx_context::TxContext,
 ) {
     let sender = sui::tx_context::sender(ctx);
@@ -148,6 +184,7 @@ public fun create_pool(
         criteria: string::utf8(criteria),
         balance: balance::zero(),
         subscription_price,
+        reward_rate,
         subscribers: table::new(ctx),
         stakers: table::new(ctx),
         data_count: 0,
@@ -251,24 +288,70 @@ public fun request_access(
     });
 }
 
+/// Grant access response from Data Owner
+public fun grant_access(
+    pool: &DataPool,
+    requestor: address,
+    record_name: vector<u8>,
+    encrypted_key: vector<u8>,
+    _ctx: &mut sui::tx_context::TxContext,
+) {
+    // Typically would verify that sender owns the record, but here we simplify
+    // assuming off-chain coordination or signature verification could happen.
+    // For now, just emit the event so the requestor can pick it up.
+
+    event::emit(AccessGranted {
+        pool_id: sui::object::uid_to_address(&pool.id),
+        requestor,
+        record_name: string::utf8(record_name),
+        encrypted_key: string::utf8(encrypted_key),
+    });
+}
+
+/// Internal helper to calculate pending rewards
+fun calculate_rewards(info: &StakerInfo, current_time: u64, reward_rate: u64): u64 {
+    if (current_time <= info.last_claim_timestamp) {
+        return 0
+    };
+    let time_diff = current_time - info.last_claim_timestamp;
+    let record_count = vec_set::length(&info.staked_records);
+    (time_diff * reward_rate * record_count)
+}
+
 /// Stake a record into the pool.
 public fun stake_record(
     pool: &mut DataPool,
     twin: &DigitalTwin,
     record_name: vector<u8>,
+    clock: &Clock,
     ctx: &mut sui::tx_context::TxContext,
 ) {
     let name_str = string::utf8(record_name);
     assert!(dynamic_field::exists_(&twin.id, name_str), ERecordNotFound);
 
     let sender = sui::tx_context::sender(ctx);
+    let current_time = sui::clock::timestamp_ms(clock);
 
-    // Simple logic: Increment staker count or score
     if (!table::contains(&pool.stakers, sender)) {
-        table::add(&mut pool.stakers, sender, 1);
+        let mut records = vec_set::empty<String>();
+        vec_set::insert(&mut records, name_str);
+        let info = StakerInfo {
+            staked_records: records,
+            last_claim_timestamp: current_time,
+            unclaimed_rewards: 0,
+        };
+        table::add(&mut pool.stakers, sender, info);
     } else {
-        let current_stake = table::borrow_mut(&mut pool.stakers, sender);
-        *current_stake = *current_stake + 1;
+        let info = table::borrow_mut(&mut pool.stakers, sender);
+        // Accrue rewards before modifying stake
+        let pending = calculate_rewards(info, current_time, pool.reward_rate);
+        info.unclaimed_rewards = info.unclaimed_rewards + pending;
+        info.last_claim_timestamp = current_time;
+
+        // Add record
+        if (!vec_set::contains(&info.staked_records, &name_str)) {
+            vec_set::insert(&mut info.staked_records, name_str);
+        };
     };
 
     pool.data_count = pool.data_count + 1;
@@ -276,7 +359,94 @@ public fun stake_record(
     event::emit(DataStaked {
         pool_id: sui::object::uid_to_address(&pool.id),
         provider: sender,
+        record_name: string::utf8(record_name),
+    });
+}
+
+/// Unstake a record from the pool.
+public fun unstake_record(
+    pool: &mut DataPool,
+    record_name: vector<u8>,
+    clock: &Clock,
+    ctx: &mut sui::tx_context::TxContext,
+) {
+    let sender = sui::tx_context::sender(ctx);
+    let name_str = string::utf8(record_name);
+    let current_time = sui::clock::timestamp_ms(clock);
+
+    assert!(table::contains(&pool.stakers, sender), ENotStaked);
+    let info = table::borrow_mut(&mut pool.stakers, sender);
+
+    // Accrue rewards
+    let pending = calculate_rewards(info, current_time, pool.reward_rate);
+    info.unclaimed_rewards = info.unclaimed_rewards + pending;
+    info.last_claim_timestamp = current_time;
+
+    if (vec_set::contains(&info.staked_records, &name_str)) {
+        vec_set::remove(&mut info.staked_records, &name_str);
+        pool.data_count = pool.data_count - 1;
+    };
+
+    event::emit(RecordUnstaked {
+        pool_id: sui::object::uid_to_address(&pool.id),
+        provider: sender,
         record_name: name_str,
+    });
+}
+
+/// Claim accrued rewards.
+public fun claim_rewards(pool: &mut DataPool, clock: &Clock, ctx: &mut sui::tx_context::TxContext) {
+    let sender = sui::tx_context::sender(ctx);
+    let current_time = sui::clock::timestamp_ms(clock);
+
+    assert!(table::contains(&pool.stakers, sender), ENotStaked);
+    let info = table::borrow_mut(&mut pool.stakers, sender);
+
+    let pending = calculate_rewards(info, current_time, pool.reward_rate);
+    let total_reward = info.unclaimed_rewards + pending;
+
+    assert!(total_reward > 0, 0);
+
+    info.unclaimed_rewards = 0;
+    info.last_claim_timestamp = current_time;
+
+    // Transfer rewards
+    // Ensure pool has enough balance
+    let pool_val = balance::value(&pool.balance);
+    let reward_val = if (pool_val < total_reward) { pool_val } else { total_reward };
+
+    let reward_coin = coin::take(&mut pool.balance, reward_val, ctx);
+    sui::transfer::public_transfer(reward_coin, sender);
+
+    event::emit(RewardsClaimed {
+        pool_id: sui::object::uid_to_address(&pool.id),
+        provider: sender,
+        amount: reward_val,
+    });
+}
+
+/// Verify a record (Researcher/Verifier).
+public fun verify_record(
+    twin: &mut DigitalTwin,
+    record_name: vector<u8>,
+    ctx: &mut sui::tx_context::TxContext,
+) {
+    // In a real scenario, we would check if sender is an authorized verifier or pool owner.
+    // For simplicity, we assume anyone calling this is a "verifier" for now,
+    // or we could restrict it to a specific capability.
+
+    let name_str = string::utf8(record_name);
+    assert!(dynamic_field::exists_(&twin.id, name_str), ERecordNotFound);
+
+    let record: &mut HealthRecord = dynamic_field::borrow_mut(&mut twin.id, name_str);
+    record.verified = true;
+
+    twin.reputation_score = twin.reputation_score + 10;
+
+    event::emit(RecordVerified {
+        twin_id: sui::object::uid_to_address(&twin.id),
+        record_name: name_str,
+        verifier: sui::tx_context::sender(ctx),
     });
 }
 
@@ -292,9 +462,9 @@ public fun withdraw_funds(pool: &mut DataPool, ctx: &mut sui::tx_context::TxCont
 public fun set_pool_price(
     pool: &mut DataPool,
     new_price: u64,
-    ctx: &mut sui::tx_context::TxContext,
+    _ctx: &mut sui::tx_context::TxContext,
 ) {
-    assert!(pool.owner == sui::tx_context::sender(ctx), ENotOwner);
+    assert!(pool.owner == sui::tx_context::sender(_ctx), ENotOwner);
     pool.subscription_price = new_price;
 }
 

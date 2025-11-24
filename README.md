@@ -140,7 +140,7 @@ pnpm build
 Ensure your `.env.local` or configuration constants match the deployed package:
 
 ```typescript
-export const PACKAGE_ID = "0xf54a608b303446261a1022d9ba53f9e5a30a6fbf8150d320ffae9b095f0c2524"
+export const PACKAGE_ID = "0xe2427ae7b5f32ec46fe52e29f19b033585d5b879fa87f80cc39d717f034f0cd6"
 ```
 
 ## 📖 User Journey

@@ -2,7 +2,7 @@ import { getFullnodeUrl, SuiClient } from "@mysten/sui/client";
 import { Transaction } from "@mysten/sui/transactions";
 
 // Constants
-const PACKAGE_ID = "0xf54a608b303446261a1022d9ba53f9e5a30a6fbf8150d320ffae9b095f0c2524"; // Replace with deployed package ID
+const PACKAGE_ID = "0xe2427ae7b5f32ec46fe52e29f19b033585d5b879fa87f80cc39d717f034f0cd6"; // Replace with deployed package ID
 const MODULE_NAME = "vital_graph";
 
 export interface HealthRecord {
@@ -169,7 +169,7 @@ export const vitalService = {
     return tx;
   },
 
-  createPool(name: string, description: string, criteria: string, subscriptionPrice: number) {
+  createPool(name: string, description: string, criteria: string, subscriptionPrice: number, rewardRate: number = 0) {
     const tx = new Transaction();
     tx.moveCall({
       target: `${PACKAGE_ID}::${MODULE_NAME}::create_pool`,
@@ -177,7 +177,8 @@ export const vitalService = {
         tx.pure.string(name),
         tx.pure.string(description),
         tx.pure.string(criteria),
-        tx.pure.u64(subscriptionPrice)
+        tx.pure.u64(subscriptionPrice),
+        tx.pure.u64(rewardRate)
       ]
     });
     return tx;
@@ -215,6 +216,44 @@ export const vitalService = {
           arguments: [
               tx.object(poolId),
               tx.object(twinId),
+              tx.pure.string(recordName),
+              tx.object("0x6")
+          ]
+      });
+      return tx;
+  },
+
+  unstakeRecord(poolId: string, recordName: string) {
+      const tx = new Transaction();
+      tx.moveCall({
+          target: `${PACKAGE_ID}::${MODULE_NAME}::unstake_record`,
+          arguments: [
+              tx.object(poolId),
+              tx.pure.string(recordName),
+              tx.object("0x6")
+          ]
+      });
+      return tx;
+  },
+
+  claimRewards(poolId: string) {
+      const tx = new Transaction();
+      tx.moveCall({
+          target: `${PACKAGE_ID}::${MODULE_NAME}::claim_rewards`,
+          arguments: [
+              tx.object(poolId),
+              tx.object("0x6")
+          ]
+      });
+      return tx;
+  },
+
+  verifyRecord(twinId: string, recordName: string) {
+      const tx = new Transaction();
+      tx.moveCall({
+          target: `${PACKAGE_ID}::${MODULE_NAME}::verify_record`,
+          arguments: [
+              tx.object(twinId),
               tx.pure.string(recordName)
           ]
       });
@@ -231,6 +270,20 @@ export const vitalService = {
               tx.pure.string(recordName),
               tx.pure.string(publicKey),
               tx.object("0x6")
+          ]
+      });
+      return tx;
+  },
+
+  grantAccess(poolId: string, requestor: string, recordName: string, encryptedKey: string) {
+      const tx = new Transaction();
+      tx.moveCall({
+          target: `${PACKAGE_ID}::${MODULE_NAME}::grant_access`,
+          arguments: [
+              tx.object(poolId),
+              tx.pure.address(requestor),
+              tx.pure.string(recordName),
+              tx.pure.string(encryptedKey)
           ]
       });
       return tx;
